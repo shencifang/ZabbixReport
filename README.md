@@ -1,19 +1,27 @@
-# ZabbixReport - Zabbix 月报生成器 🗓️
+# ZabbixReport - Zabbix 告警报告生成工具 📊
 
 ## 项目概述
 
-ZabbixReport 是一个 **Zabbix 告警月报生成工具**，与 [ZabbixAlert](https://github.com/shencifang/ZabbixAlert)（告警实时推送）配套使用。
+ZabbixReport 是一个 **Zabbix 告警报告生成工具**，支持生成 **日报** 和 **月报**，与 [ZabbixAlert](https://github.com/shencifang/ZabbixAlert)（告警实时推送）配套使用。
 
-它从 Zabbix 监控系统的 MySQL 数据库中读取告警事件数据，自动生成 **上个月的告警统计报表**（HTML 格式），并通过 **邮件** 发送给指定收件人。
+### 数据来源说明
+
+| 功能 | 数据来源 | 是否需要连接 Zabbix |
+|------|----------|:---:|
+| **日报**（查询未关闭事件） | Zabbix API 获取当前未关闭触发器 + MySQL 历史数据比对 | ✅ 是 |
+| **月报**（历史统计） | MySQL `event` 表 | ❌ 否 |
+
+- **日报**：实时查询 Zabbix 上当天仍有问题的告警，与本地数据库比对，输出当日未关闭事件
+- **月报**：直接读取 MySQL 中上个月的全部历史告警记录，**不连接 Zabbix API**
 
 ### 与 ZabbixAlert 的关系
 
 | 项目 | 功能 | 关系 |
 |------|------|------|
 | **ZabbixAlert** | 实时推送告警到桌面通知 | 告警发生时触发 |
-| **ZabbixReport** | 每月生成告警汇总报表 | 告警发生后统计分析 |
+| **ZabbixReport** | 日报/月报生成与邮件发送 | 告警发生后统计分析 |
 
-两个项目共用同一套数据库（`zabbixmonitor`），ZabbixReport 做的是事后统计汇总。
+两个项目共用同一套数据库（`zabbixmonitor`），ZabbixReport 做的是事后统计汇总与报告推送。
 
 ---
 
@@ -25,63 +33,85 @@ ZabbixReport 是一个 **Zabbix 告警月报生成工具**，与 [ZabbixAlert](h
 | UI 框架 | Windows Forms (.NET Framework 4.6.1) |
 | 数据库 | MySQL (MySql.Data) |
 | 数据库工具层 | Maticsoft.DBUtility |
+| Zabbix API | 日报专用 — Zabbix JSON-RPC API（Newtonsoft.Json） |
 | 邮件发送 | System.Net.Mail (SMTP) |
 | IDE | Visual Studio 2012+ |
+
+> 注：Zabbix API 仅在 **日报**（查询未关闭事件）功能中使用；**月报** 功能完全基于 MySQL 数据。
+
+---
 
 ## 项目文件结构
 
 ```
 ZabbixReport/
-├── App.config                  # 应用配置文件
-├── Program.cs                  # 程序入口
-├── Form1.cs                    # 主窗体逻辑（生成报告 + 发送邮件）
-├── Form1.Designer.cs           # 窗体设计器代码
-├── Form1.resx                  # 窗体资源
-├── Event.cs                    # 事件实体模型
-├── EventDAL.cs                 # 数据访问层（数据库查询）
-├── EventBLL.cs                 # 业务逻辑层
-├── DbHelperMySQL.cs            # MySQL 数据库帮助类
-├── Email.cs                    # 邮件发送组件
-├── Log.cs                      # 日志组件
+├── App.config                     # 应用配置文件（Zabbix连接、邮箱等）
+├── Program.cs                     # 程序入口
+├── Form1.cs                       # 主窗体逻辑（日报/月报生成 + 发送邮件）
+├── Form1.Designer.cs              # 窗体设计器代码
+├── Form1.resx                     # 窗体资源
+├── Event.cs                       # 事件实体模型
+├── EventDAL.cs                    # 数据访问层（数据库查询）
+├── EventBLL.cs                    # 业务逻辑层
+├── DbHelperMySQL.cs               # MySQL 数据库帮助类
+├── Email.cs                       # 邮件发送组件（备用独立邮件发送类）
+├── Zabbix.cs                      # Zabbix API 调用封装（JSON-RPC）— 日报专用
+├── Request.cs                     # Zabbix JSON-RPC 请求对象
+├── Response.cs                    # Zabbix JSON-RPC 响应对象
+├── DateTimeUtil.cs                # 时间戳与 DateTime 互转工具
+├── Log.cs                         # 日志组件
 ├── Properties/
-│   ├── AssemblyInfo.cs         # 程序集信息
-│   ├── Resources.resx          # 资源文件
-│   └── Settings.settings       # 设置文件
-├── tem/                        # HTML 模板目录（需手动创建）
-│   ├── head.html               # 报告头部 HTML 模板
-│   ├── foot.html               # 报告尾部 HTML 模板
-│   └── index.html              # 生成的报告（程序自动输出）
-└── README.md                   # 本文档
+│   ├── AssemblyInfo.cs            # 程序集信息
+│   ├── Resources.resx             # 资源文件
+│   └── Settings.settings          # 设置文件
+├── tem/                           # HTML 模板目录（已纳入版本管理）
+│   ├── head1.html                 # 日报头部 HTML 模板（CSS+标题）
+│   ├── head2.html                 # 日报段落模板（文档信息行）
+│   ├── head3.html                 # 日报"未关闭事件"表格标题模板
+│   ├── medium.html                # 日报"所有事件"过渡段模板
+│   ├── foot.html                  # 月报尾部 HTML 模板
+│   └── index.html                 # 生成的报告（程序自动输出）
+└── README.md                      # 本文档
 ```
 
 ---
 
 ## 核心功能
 
-### 1️⃣ 生成月报
+### 1️⃣ 日报（查询未关闭事件）
+
+> ⚡ **需要连接 Zabbix API**
+
+点击 **"查询未关闭事件"** 按钮，程序会：
+
+1. Ping 检测 Zabbix 服务器连通性
+2. 通过 Zabbix API（`user.login`）登录 Zabbix
+3. 调用 `trigger.get` 查询当天严重等级 ≥ 3 的未关闭触发器
+4. 将 Zabbix 返回的实时数据与本地 MySQL `event` 表比对，识别已知/未知事件
+5. 在左侧文本框输出实时日志
+6. 生成日报 HTML 文件
+
+### 2️⃣ 月报（历史统计）
+
+> 💾 **仅使用 MySQL 数据，不需要连接 Zabbix**
 
 点击 **"开始生成"** 按钮，程序会：
 
-1. 自动计算 **上个月** 的时间范围（如当前是 6 月，则查询 5 月 1 日 ~ 5 月 31 日）
-2. 连接 MySQL 数据库，从 `event` 表中查询时间段内的所有告警事件
-3. 读取 `tem/head.html` 作为报告开头，`tem/foot.html` 作为报告结尾
+1. 自动计算 **上个月** 的时间范围（例如当前是 6 月，则查询 5 月 1 日 ~ 5 月 31 日）
+2. 连接 MySQL 数据库，从 `event` 表中查询该时间段内的所有历史告警事件
+3. 读取 `tem/foot.html` 尾部模板，组合生成完整报告
 4. 将告警数据逐行插入 HTML 表格，生成完整报告文件 `tem/index.html`
 5. 在界面文本框中显示执行日志
 
-### 2️⃣ 发送邮件
+### 3️⃣ 发送邮件
 
 点击 **"发送邮件"** 按钮，程序会：
 
 1. 读取刚生成的 `tem/index.html` 作为邮件正文
-2. 通过 QQ 邮箱 SMTP 服务发送报告
-3. 邮件主题可自定义（如 "XX月份告警报告"）
-4. 支持收件人、抄送、密送等配置
+2. 将 `tem/index.html` 作为邮件附件一并发送
+3. 通过配置的 SMTP 服务发送报告
+4. 支持收件人、抄送人配置（多收件人以逗号分隔）
 
-### 3️⃣ 日志记录
-
-程序运行时会在 `log/` 目录下生成日志文件 `Log.txt`，记录所有操作过程。
-
----
 
 ## 数据库要求
 
@@ -103,15 +133,15 @@ ZabbixReport/
 | `id` | varchar(255) | 事件 ID（主键） |
 | `triggerid` | varchar(255) | 触发器 ID |
 | `time` | datetime | 事件发生时间 |
-| `ip` | varchar(255) | 服务器 IP |
+| `ip` | varchar(255) | 服务器名称 / IP |
 | `content` | varchar(255) | 事件内容描述 |
-| `gm` | varchar(255) | 工程师/处理人 |
+| `gm` | varchar(255) | 工程师 / 处理人 |
 | `recetime` | datetime | 恢复时间 |
 | `close` | decimal | 是否关闭（0/1） |
 | `closetime` | datetime | 关闭时间 |
 | `cause` | varchar(255) | 故障原因 |
 
-> ⚠️ **注意**：该表和数据库与 ZabbixAlert 项目共用。数据由其他程序或手动写入，ZabbixReport 只读不写。
+> ⚠️ **注意**：该表和数据库与 ZabbixAlert 项目共用。数据由 Zabbix 或其他程序写入，ZabbixReport **只读不写**。
 
 ---
 
@@ -121,8 +151,10 @@ ZabbixReport/
 
 - **操作系统**：Windows 7 / Windows 10 / Windows Server 2008+
 - **.NET 运行时**：.NET Framework 4.6.1 或更高版本
-- **数据库**：MySQL 5.6+（可远程访问）
-- **邮箱**：QQ 邮箱（或其他支持 SMTP 的邮箱）
+  - [微软官网下载地址](https://www.microsoft.com/zh-CN/download/details.aspx?id=49981)
+- **MySQL 数据库**：5.6+（可远程访问，需开放网络连接）
+- **Zabbix 服务器**：仅日报功能需要，月报无需 Zabbix
+- **邮箱**：支持 SMTP 的邮箱服务
 
 ### 部署步骤
 
@@ -131,104 +163,111 @@ ZabbixReport/
    - 解决方案配置选 `Release`，目标平台 `Any CPU`
    - 生成解决方案（Build → Build Solution）
 
-2. **创建 HTML 模板目录**
+2. **HTML 模板目录**（已纳入版本管理，无需手动创建）
    ```
-   ZabbixReport\bin\Release\tem\
-   ├── head.html    # 报告头部，需自行编写 HTML 开头
-   ├── foot.html    # 报告尾部，需自行编写 HTML 结尾
-   └── index.html   # 自动生成，无需手动创建
+   ZabbixReport\tem\
+   ├── head1.html    # 日报头部（CSS+标题）
+   ├── head2.html    # 日报段落（文档信息行）
+   ├── head3.html    # 日报"未关闭事件"表格标题
+   ├── medium.html   # 日报"所有事件"过渡段
+   ├── foot.html     # 月报尾部
+   └── index.html    # 自动生成，无需手动创建
    ```
 
-3. **配置数据库连接**
+3. **修改配置文件 `20210621.exe.config`（App.config）**
+
+   ```xml
+   <appSettings>
+     <!-- Zabbix 服务器配置（仅日报功能需要） -->
+     <add key="zabbixip" value="Zabbix服务器IP地址"/>
+     <add key="zabbixurl" value="Zabbix API URL(如:http://your-zabbix/zabbix/api_jsonrpc.php)"/>
+     <add key="zabbixuesr" value="Zabbix用户名"/>
+     <add key="zabbixpass" value="Zabbix密码"/>
+     
+     <!-- 邮件配置 -->
+     <add key="mail" value="发件人邮箱(如:your@qq.com)"/>
+     <add key="pass" value="发件邮箱SMTP授权码"/>
+     <add key="touser" value="收件人邮箱(多个以逗号分隔)"/>
+     <add key="ccuser" value="抄送人邮箱(多个以逗号分隔)"/>
+   </appSettings>
+   ```
+
+4. **修改数据库连接串**
    - 打开 `DbHelperMySQL.cs`，找到 `connectionString` 变量
    - 修改为实际的数据库 IP、用户名、密码
    ```csharp
-   // 格式示例
    public static string connectionString = "server=数据库IP;database=zabbixmonitor;uid=用户名;pwd=密码;CharSet=utf8;";
    ```
 
-4. **配置邮件发送**
-   - 打开 `Form1.cs`，找到 `button1_Click` 方法
-   - 修改发件人邮箱、SMTP 授权码、收件人地址
-   - 修改报告主题
-
 5. **运行程序**
-   - 运行 `20210621.exe`
-   - 点击 **"开始生成"** → 查看日志 → 点击 **"发送邮件"**
-
-### HTML 模板示例
-
-**tem/head.html** 参考：
-```html
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>告警月报</title></head>
-<body>
-<h2>XX月份告警统计报告</h2>
-<table border="1" cellpadding="5" cellspacing="0">
-<tr>
-  <th>事件ID</th><th>触发器ID</th><th>时间</th><th>服务器IP</th>
-  <th>事件内容</th><th>工程师</th><th>是否关闭</th><th>原因</th>
-</tr>
-```
-
-**tem/foot.html** 参考：
-```html
-</table>
-</body>
-</html>
-```
+   - 执行 `20210621.exe`
+   - 可按流程手动生成日报/月报并发送
 
 ---
 
 ## 使用流程
 
+### 日报生成流程（需要 Zabbix API）
+
 ```
 1. 双击运行程序
-    └─ 窗体标题: "月报生成器"
-    
-2. 点击 [开始生成]
-    ├─ 计算上个月日期范围
-    ├─ 连接数据库查询 event 表
-    ├─ 读取 head.html / foot.html 模板
-    ├─ 生成 tem/index.html 报告文件
-    └─ 文本框输出执行日志
-    
-3. 检查生成的报告
-    └─ 打开 tem/index.html 查看效果
-    
-4. 点击 [发送邮件]
-    ├─ 读取 tem/index.html 作为邮件正文
-    ├─ 通过 QQ SMTP 发送
+2. 点击 [查询未关闭事件]
+    ├─ Ping Zabbix 服务器（验证连通性）
+    ├─ 调用 Zabbix API 登录
+    ├─ 获取当天未关闭的严重告警（实时数据）
+    └─ 与 MySQL 数据库比对，输出实时日志
+3. 点击 [发送邮件]
+    ├─ 读取生成的日报 HTML
+    ├─ 通过 SMTP 发送至收件人/抄送人
     └─ 提示发送成功/失败
 ```
 
----
+### 月报生成流程（仅用 MySQL，无需 Zabbix）
+
+```
+1. 点击 [开始生成]
+    ├─ 自动计算上个月日期范围
+    ├─ 连接 MySQL 数据库，查询 event 表
+    ├─ 读取 HTML 模板
+    ├─ 生成 tem/index.html 报告文件
+    └─ 文本框输出执行日志
+2. 检查生成的报告
+    └─ 打开 tem/index.html 查看效果
+3. 点击 [发送邮件]
+    └─ 发送月报（正文 + 附件）
+```
 
 ## 常见问题
 
-**Q：生成的报告没有数据？**
-- 检查数据库连接是否正常
+**Q：月报没有数据？**
+- 检查 MySQL 数据库连接是否正常
 - 检查 `event` 表中是否有上个月的数据
-- 检查日期范围计算是否正确
+- 月报仅查 MySQL，不依赖 Zabbix 服务器
+
+**Q：日报查询不到数据？**
+- 检查 Zabbix 服务器 IP 是否能 Ping 通
+- 检查 Zabbix API URL 是否正确
+- 检查 Zabbix 用户名和密码是否正确
+- 日报需要 Zabbix API + MySQL 两者都正常
 
 **Q：邮件发送失败？**
-- 确认 QQ 邮箱 SMTP 服务已开启
-- 确认使用的是 **SMTP 授权码**（非 QQ 密码）
-- 检查端口 25 是否被防火墙拦截，可尝试 465 端口（SSL）
+- 确认 SMTP 服务器地址和端口正确
+- 确认使用的是 **SMTP 授权码**（非邮箱密码）
+- 检查端口 25 是否被防火墙拦截
 
 **Q：找不到 `tem/` 目录？**
-- 手动创建 `tem/` 目录，并放入 `head.html` 和 `foot.html`
+- `tem/` 目录已纳入版本管理，执行 `git clone` 即可获得所有模板文件
+- 如果是从压缩包或其他方式部署，请手动创建 `tem/` 目录并放入 `head1.html`、`head2.html`、`head3.html`、`medium.html`、`foot.html` 五个模板文件
 
 ---
 
 ## 开发计划
 
-- [ ] 支持自定义日期范围（不只是上个月）
+- [ ] 支持自定义日期范围（不只是固定上月/当天）
 - [ ] 支持多数据库来源
 - [ ] 支持导出 PDF / Excel
-- [ ] 支持定时自动生成和发送
 - [ ] 统计图表展示
+- [ ] 更灵活的时间间隔配置
 
 ---
 
