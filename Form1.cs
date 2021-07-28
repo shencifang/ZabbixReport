@@ -19,14 +19,16 @@ namespace _20210621
         public _20210621.Event eventModule = new _20210621.Event();
         public _20210621.EventBLL eventBLL = new _20210621.EventBLL();
         Zabbix zabbix = new Zabbix(ConfigurationManager.AppSettings["zabbixuesr"], ConfigurationManager.AppSettings["zabbixpass"], ConfigurationManager.AppSettings["zabbixurl"]);
+        //Zabbix zabbix = new Zabbix(ConfigurationManager.AppSettings["zabbixuesr"], ConfigurationManager.AppSettings["zabbixpass"], "Zabbix API URL(如:http://your-zabbix/zabbix/api_jsonrpc.php)");
         string msg = "";
+        string title = "";
         public Form1()
         {
             InitializeComponent();
             //日志记录程序开始时间
             log.log("----------------------------------");
             log.log("程序开始");
-            button1.Enabled = false;
+            //button1.Enabled = false;
             start.Enabled = false;
             log.log("开始生成报告。");
             textBox1.Text += "[" + DateTime.Now.ToString() + "]开始生成报告。\r\n";
@@ -66,7 +68,7 @@ namespace _20210621
             System.IO.File.WriteAllText("tem/index.html", msg, Encoding.UTF8);
             textBox1.SelectionStart = textBox1.Text.Length;
             textBox1.ScrollToCaret();
-            button1.Enabled = true;
+            //button1.Enabled = true;
             start.Enabled = false;
         }
 
@@ -82,13 +84,13 @@ namespace _20210621
 
             if (ConfigurationManager.AppSettings["ccuser"] == "") {  }
             else msg.CC.Add(ConfigurationManager.AppSettings["ccuser"]);
-            //msg.To.Add("抄送人邮箱(如:hehx@xxx.com)");
+            //msg.To.Add("收件人邮箱(如:user@example.com)");
             //msg.To.Add("b@b.com");可以发送给多人 
             //msg.CC.Add("c@c.com");可以抄送给多人
 
-            msg.From = new MailAddress("发件人邮箱(如:your@qq.com)", "发件人邮箱(如:your@qq.com)", System.Text.Encoding.UTF8);
+            msg.From = new MailAddress("发件人邮箱(如:your@qq.com)", "发件人显示名称", System.Text.Encoding.UTF8);
 	        /* 上面3个参数分别是发件人地址（可以随便写），发件人姓名，编码*/
-            msg.Subject = "报告主题(如:XX月份告警报告)";
+            msg.Subject = title;
 	        //邮件标题
 	        msg.SubjectEncoding = System.Text.Encoding.UTF8;
 	        //邮件标题编码
@@ -110,7 +112,7 @@ namespace _20210621
             client.Port = 25;
 	        //Gmail使用的端口
             client.Host = "smtp.qq.com";
-	        client.EnableSsl = true;
+	        client.EnableSsl = false;
 	        //经过ssl加密
 	        object userState = msg;
 	        try 
@@ -127,6 +129,7 @@ namespace _20210621
 
         private void button2_Click(object sender, EventArgs e)
         {
+            button3.Enabled = false;
             DateTime d1 = new DateTime(DateTime.Now.Year, DateTime.Now.Month - 1, 1);
             DateTime d2 = d1.AddMonths(1).AddDays(0);
             DateTime d3 = DateTime.Now.AddDays(1 - DateTime.Now.Day).AddMonths(-1);
@@ -142,8 +145,6 @@ namespace _20210621
             PingReply reply = p1.Send(host);
             textBox1.Text += "ZABBIX服务器地址：" + host + "\r\n";
             log.log("ZABBIX服务器地址：" + host);
-            if (reply.Status == IPStatus.Success)
-            {
                 textBox1.Text += "连接成功\r\n";
                 log.log("连接成功");
                 //登陆
@@ -194,21 +195,79 @@ namespace _20210621
                     zabbix.logout();
                     button2.Enabled = false;
                     start.Enabled = true;
+                    title = d3.Month + "月份告警报告";
                 }
                 else { textBox1.Text += "登录失败\r\n"; }
-            }
-            else if (reply.Status == IPStatus.TimedOut)
-            {
-                
-                MessageBox.Show("服务器连接超时");
-            }
-            else
-            {
-                
-                MessageBox.Show("服务器连接失败");
-            }
         }
 
-        
+        private void button3_Click(object sender, EventArgs e)
+        {
+            button2.Enabled = false;
+            start.Enabled = false;
+            DateTime d1 = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day - 1);
+            DateTime d2 = DateTime.Now;
+            //d2 = new DateTime(d2.Year, d2.Month, d2.Day);
+            long lastChangeSinceTime = DateTimeUtil.DateTimeToTimeStamp(d1);
+            long lastChangeTillTime = DateTimeUtil.DateTimeToTimeStamp(d2);
+
+            msg = "";
+            msg = System.IO.File.ReadAllText("tem/head1.html");
+            msg += d1 + "-" + d2 + System.IO.File.ReadAllText("tem/head2.html") + DateTime.Now.ToString() + System.IO.File.ReadAllText("tem/head3.html");
+                //登陆
+                zabbix.login();
+                if (zabbix.loggedOn)
+                {
+                    textBox1.Text += "登录成功\r\n";
+                    log.log("登录成功");
+                    int rowCount = 0;
+                    Response responseObj = zabbix.objectResponse("trigger.get", new
+                    {
+                        output = new string[] { "hostname", "description", "lastchange", "priority", "value", "status", "triggerid" },
+                        min_severity = 3,
+                        expandData = true,
+                        expandDescription = true,
+                        expandExpression = true,
+                        selectHosts = "extend",
+                        selectGroups = "extend",
+                        monitored = true,
+                        sortfield = "hostname",
+                        skipDependent = true,
+                        lastChangeSince = lastChangeSinceTime,
+                        lastChangeTill = lastChangeTillTime,
+                        filter = new { value = 1 }
+                    });
+                    foreach (dynamic data in responseObj.result)
+                    {
+                        textBox1.Text += data.triggerid + "-" + data.hostname + "-" + data.description + "-" + data.lastchange + "\r\n";
+                        log.log(data.triggerid + "-" + data.hostname + "-" + data.description + "-" + data.lastchange);
+                        List<_20210621.Event> eventlist = eventBLL.GetModelList("id='" + data.lastchange + data.triggerid + "'");
+                        if (eventlist.Count == 0)
+                        {
+                            textBox1.Text += "数据异常\r\n";
+                            log.log("获取到的事件在数据库中未查询到。");
+                            msg += "<tr><td>" + data.lastchange + data.triggerid + "</td><td>" + data.triggerid + "</td><td>" + DateTimeUtil.TimeStampToDateTime(long.Parse(data.lastchange)) + "</td><td>" + data.hostname + "</td><td>" + data.description + "</td><td>" + "-" + "</td><td>0</td><td>" + " " + "</td>";//</tr></table>
+                            rowCount++;
+                        }
+                        else
+                        {
+                            foreach (_20210621.Event item in eventlist)
+                            {
+                                string temp = "[" + DateTime.Now.ToString() + "]" + item.id + "|" + item.triggerid + "|" + item.time + "|" + item.ip + "|" + item.content + "|" + item.gm + "|" + item.recetime + "|" + item.close + "|" + item.closetime + "|" + item.cause;
+                                textBox1.Text += temp + "\r\n";
+                                log.log(temp);
+                                msg += "<tr><td>" + item.id + "</td><td>" + item.triggerid + "</td><td>" + item.time + "</td><td>" + item.ip + "</td><td>" + item.content + "</td><td>" + item.gm + "</td><td>0</td><td>" + item.cause + "</td>";//</tr></table>
+                                rowCount++;
+                            }
+                        }
+                    }
+                    msg += "</tr></table><p>此表格生成于" + DateTime.Now.ToString() + "。共计" + rowCount.ToString() + "个事件至今未关闭</p>";
+                    //msg += System.IO.File.ReadAllText("tem/medium.html");
+                    msg += System.IO.File.ReadAllText("tem/foot.html");
+                    System.IO.File.WriteAllText("tem/index.html", msg, Encoding.UTF8);
+                    zabbix.logout();
+                    title = DateTime.Now.Month + "月" + DateTime.Now.Day + "日告警报告(日报)"; ;
+                }
+                else { textBox1.Text += "登录失败\r\n"; }
+        }
     }
 }
