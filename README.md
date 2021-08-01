@@ -60,7 +60,7 @@ ZabbixReport/
 │   ├── AssemblyInfo.cs            # 程序集信息
 │   ├── Resources.resx             # 资源文件
 │   └── Settings.settings          # 设置文件
-├── tem/                           # HTML 模板目录（已纳入版本管理）
+├── bin/Debug/tem/                 # HTML 模板目录（程序运行目录下）
 │   ├── head1.html                 # 日报/查询未关闭事件头部模板（CSS+标题）
 │   ├── head2.html                 # 日报/查询未关闭事件段落模板（文档信息行）
 │   ├── head3.html                 # 日报/查询未关闭事件表格标题模板
@@ -177,9 +177,9 @@ ZabbixReport/
    - 解决方案配置选 `Release`，目标平台 `Any CPU`
    - 生成解决方案（Build → Build Solution）
 
-2. **HTML 模板目录**（已纳入版本管理，无需手动创建）
+2. **HTML 模板目录**（程序运行目录 `bin/Debug/tem/`下）
    ```
-   ZabbixReport\tem\
+   bin\Debug\tem\
    ├── head1.html    # 日报/查询未关闭事件头部（CSS+标题）
    ├── head2.html    # 日报/查询未关闭事件段落（文档信息行）
    ├── head3.html    # 日报/查询未关闭事件表格标题
@@ -187,6 +187,7 @@ ZabbixReport/
    ├── foot.html     # 尾部
    └── index.html    # 自动生成，无需手动创建
    ```
+   > 编译后在 `bin/Debug/` 下运行，程序读取 `tem/` 为相对路径。部署时需将 `bin/Debug/tem/` 整个目录复制到可执行文件同级目录。`tem/` 目录**非版本管理**，需手动复制部署。
 
 3. **修改配置文件 `20210621.exe.config`（App.config）**
 
@@ -296,5 +297,20 @@ ZabbixReport/
 - 检查端口 25 是否被防火墙拦截
 
 **Q：找不到 `tem/` 目录？**
-- `tem/` 目录已纳入版本管理，执行 `git clone` 即可获得所有模板文件
-- 如果是从压缩包或其他方式部署，请手动创建 `tem/` 目录并放入 `head1.html`、`head2.html`、`head3.html`、`medium.html`、`foot.html` 五个模板文件（内容见上方各文件说明）
+- `tem/` 目录位于 `bin/Debug/tem/`，是从解压版附带过去的
+- 部署时需将 `bin/Debug/tem/` 整个目录复制到可执行文件同级目录
+- 模板文件包括：`head1.html`、`head2.html`、`head3.html`、`medium.html`、`foot.html` 五个文件
+
+---
+
+## 修改记录
+
+### 2021-07-29
+
+- **新增** 日报生成功能（button3）：查询昨天至今未关闭触发器，生成日报 HTML 并写入 `tem/index.html`
+- **新增** App.config 增加 `mail` 和 `pass` 配置项，SMTP 账号从配置文件读取
+- **优化** 按钮布局分组：日报/月报分组清晰
+- **优化** 邮件标题改为动态设置（由 button2/button3 写入）
+- **调整** 禁用 SSL（使用 QQ邮箱 25端口），兼容更多 SMTP 服务
+- **移除** 模板和代码中"中车"字样
+- **脱敏** 所有代码中敏感信息（IP、账号、密码、邮箱等）替换为占位符
